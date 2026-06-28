@@ -25,7 +25,7 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const isAuthPage = request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/signup'
+  const isAuthPage = ['/login', '/signup', '/reset-password'].includes(request.nextUrl.pathname)
   const isPublicApi = request.nextUrl.pathname === '/api/signup'
 
   if (!user && !isAuthPage && !isPublicApi) {

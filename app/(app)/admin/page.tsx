@@ -7,6 +7,8 @@ import { Profile, TimeEntry, CorrectionRequest, VacationRequest, SickLeaveReport
 import { format, differenceInMinutes, startOfMonth, endOfMonth } from 'date-fns'
 import { sv as dateSv, uk as dateUk } from 'date-fns/locale'
 import { useRouter } from 'next/navigation'
+import * as XLSX from 'xlsx'
+import jsPDF from 'jspdf'
 
 function formatDuration(minutes: number) {
   const h = Math.floor(minutes / 60)
@@ -52,6 +54,12 @@ const labels = {
     totalHours: 'timmar',
     totalCost: 'beräknad kostnad (timanställda)',
     allEmployees: 'Alla anställda',
+    exportExcel: 'Excel',
+    exportPdf: 'PDF',
+    reportTitle: 'Månadsrapport',
+    colName: 'Namn',
+    colHours: 'Timmar',
+    colCost: 'Kostnad (kr)',
   },
   uk: {
     title: 'Адмін',
@@ -79,6 +87,12 @@ const labels = {
     totalHours: 'годин',
     totalCost: 'орієнтовна вартість (погодинні)',
     allEmployees: 'Всі співробітники',
+    exportExcel: 'Excel',
+    exportPdf: 'PDF',
+    reportTitle: 'Місячний звіт',
+    colName: 'Ім\'я',
+    colHours: 'Години',
+    colCost: 'Вартість (кр)',
   },
 }
 
@@ -183,6 +197,56 @@ export default function AdminPage() {
     URL.revokeObjectURL(url)
   }
 
+  function buildReportRows() {
+    return summaries.map(({ profile: p, totalMinutes }) => ({
+      [l.colName]: p.full_name,
+      [l.colHours]: (totalMinutes / 60).toFixed(2),
+      [l.colCost]: p.employment_type === 'hourly' && p.hourly_rate
+        ? Math.round((totalMinutes / 60) * p.hourly_rate)
+        : '',
+    }))
+  }
+
+  function exportExcel() {
+    const now = new Date()
+    const ws = XLSX.utils.json_to_sheet(buildReportRows())
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, l.reportTitle)
+    XLSX.writeFile(wb, `timesave-rapport-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}.xlsx`)
+  }
+
+  function exportPdf() {
+    const now = new Date()
+    const doc = new jsPDF()
+    doc.setFontSize(16)
+    doc.text(`${l.reportTitle} — ${format(now, 'MMMM yyyy', { locale: dateLocale })}`, 14, 18)
+    doc.setFontSize(11)
+
+    let y = 30
+    doc.text(l.colName, 14, y)
+    doc.text(l.colHours, 110, y)
+    doc.text(l.colCost, 150, y)
+    y += 6
+    doc.line(14, y - 4, 196, y - 4)
+
+    for (const { profile: p, totalMinutes } of summaries) {
+      const cost = p.employment_type === 'hourly' && p.hourly_rate
+        ? Math.round((totalMinutes / 60) * p.hourly_rate)
+        : null
+      doc.text(p.full_name, 14, y)
+      doc.text((totalMinutes / 60).toFixed(2), 110, y)
+      if (cost !== null) doc.text(String(cost), 150, y)
+      y += 7
+    }
+
+    doc.line(14, y, 196, y)
+    y += 8
+    doc.setFontSize(12)
+    doc.text(`${l.totalThisMonth}: ${(totalMinutesAll / 60).toFixed(2)} ${l.totalHours}`, 14, y)
+
+    doc.save(`timesave-rapport-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}.pdf`)
+  }
+
   if (!profile || profile.role !== 'admin') return null
 
   const currentMonth = format(new Date(), 'MMMM yyyy', { locale: dateLocale })
@@ -199,9 +263,17 @@ export default function AdminPage() {
     <div className="max-w-md mx-auto px-4 pt-8">
       <div className="flex items-start justify-between mb-1">
         <h1 className="text-2xl font-bold text-gray-900">{l.title}</h1>
-        <button onClick={exportPaxml} className="text-xs bg-gray-900 text-white px-3 py-1.5 rounded-lg font-medium">
-          {l.exportFortnox}
-        </button>
+        <div className="flex gap-1.5">
+          <button onClick={exportExcel} className="text-xs bg-green-700 text-white px-2.5 py-1.5 rounded-lg font-medium">
+            {l.exportExcel}
+          </button>
+          <button onClick={exportPdf} className="text-xs bg-red-700 text-white px-2.5 py-1.5 rounded-lg font-medium">
+            {l.exportPdf}
+          </button>
+          <button onClick={exportPaxml} className="text-xs bg-gray-900 text-white px-2.5 py-1.5 rounded-lg font-medium">
+            {l.exportFortnox}
+          </button>
+        </div>
       </div>
       <p className="text-sm text-gray-600 mb-5 capitalize">{currentMonth}</p>
 

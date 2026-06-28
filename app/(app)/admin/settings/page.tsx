@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/components/UserProvider'
-import { CompanySettings, Profile, VacationBalance, VacationRequest } from '@/lib/types'
+import { CompanySettings, Organization, OvertimeRule, Profile, VacationBalance, VacationRequest } from '@/lib/types'
 import { calculateVacationSummary } from '@/lib/vacation'
 import { useRouter } from 'next/navigation'
 
@@ -11,8 +11,11 @@ const labels = {
   sv: {
     title: 'Inställningar',
     tabCompany: 'Företag',
+    tabOvertime: 'Övertid',
     tabEmployees: 'Anställda',
-    tabVacation: 'Semester',
+    companyInfo: 'Företagsuppgifter',
+    companyName: 'Företagsnamn',
+    orgNumber: 'Organisationsnummer',
     breakHandling: 'Rasthantering',
     auto: 'Automatiskt',
     manual: 'Manuell',
@@ -53,7 +56,7 @@ const labels = {
     available: 'Tillgängliga',
     earnedThisYear: 'Intjänade i år',
     used: 'Använda',
-    hourlyVacationNote: (pct: number) => `Får ${pct}% semesterersättning utbetald löpande på timlönen — ingen dagräkning.`,
+    hourlyVacationNote: (pct: number) => `+ ${pct}% semesterersättning på timlönen (ingen dagräkning)`,
     reminderClockInPersonal: 'Påminnelse instämpling (valfritt)',
     reminderClockOutPersonal: 'Påminnelse utstämpling (valfritt)',
     reminderNote: 'Lämna tomt för att använda företagets standardtid.',
@@ -61,12 +64,27 @@ const labels = {
     breakModeDefault: 'Företagets standard',
     breakModeNote: 'Lämna på "Företagets standard" om inget individuellt behövs.',
     autoBreakMinutesPersonal: 'Rastavdrag (minuter)',
+    overtimeTitle: 'Övertidsregler',
+    overtimeIntro: 'Definiera vilka tider/dagar som räknas som övertid.',
+    addRule: '+ Lägg till regel',
+    ruleLabel: 'Namn (t.ex. "Helg" eller "Midsommarafton")',
+    ruleDay: 'Veckodag',
+    ruleAllDays: 'Specifikt datum istället',
+    ruleDate: 'Datum',
+    ruleStart: 'Starttid',
+    ruleEnd: 'Sluttid',
+    weekdays: ['Söndag', 'Måndag', 'Tisdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lördag'],
+    noRules: 'Inga övertidsregler ännu',
+    delete: 'Ta bort',
   },
   uk: {
     title: 'Налаштування',
     tabCompany: 'Компанія',
+    tabOvertime: 'Понаднормові',
     tabEmployees: 'Співробітники',
-    tabVacation: 'Відпустка',
+    companyInfo: 'Дані компанії',
+    companyName: 'Назва компанії',
+    orgNumber: 'Реєстраційний номер',
     breakHandling: 'Управління перервами',
     auto: 'Автоматично',
     manual: 'Вручну',
@@ -107,7 +125,7 @@ const labels = {
     available: 'Доступно',
     earnedThisYear: 'Накопичено цього року',
     used: 'Використано',
-    hourlyVacationNote: (pct: number) => `Отримує ${pct}% відпускних, що нараховуються на погодинну ставку — облік днів не потрібен.`,
+    hourlyVacationNote: (pct: number) => `+ ${pct}% відпускних на погодинну ставку (без обліку днів)`,
     reminderClockInPersonal: 'Нагадування про прихід (необов\'язково)',
     reminderClockOutPersonal: 'Нагадування про відхід (необов\'язково)',
     reminderNote: 'Залиште порожнім, щоб використовувати стандартний час компанії.',
@@ -115,6 +133,18 @@ const labels = {
     breakModeDefault: 'Стандарт компанії',
     breakModeNote: 'Залиште "Стандарт компанії", якщо немає індивідуальних потреб.',
     autoBreakMinutesPersonal: 'Вирахування перерви (хвилини)',
+    overtimeTitle: 'Правила понаднормової роботи',
+    overtimeIntro: 'Визначте, які часи/дні рахуються як понаднормові.',
+    addRule: '+ Додати правило',
+    ruleLabel: 'Назва (напр. "Вихідні" або "Святковий день")',
+    ruleDay: 'День тижня',
+    ruleAllDays: 'Конкретна дата замість цього',
+    ruleDate: 'Дата',
+    ruleStart: 'Час початку',
+    ruleEnd: 'Час закінчення',
+    weekdays: ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П\'ятниця', 'Субота'],
+    noRules: 'Ще немає правил понаднормової роботи',
+    delete: 'Видалити',
   },
 }
 
@@ -125,12 +155,15 @@ export default function SettingsPage() {
   const l = labels[lang]
 
   const [settings, setSettings] = useState<CompanySettings | null>(null)
+  const [organization, setOrganization] = useState<Organization | null>(null)
+  const [overtimeRules, setOvertimeRules] = useState<OvertimeRule[]>([])
   const [employees, setEmployees] = useState<Profile[]>([])
   const [balances, setBalances] = useState<VacationBalance[]>([])
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([])
   const [saved, setSaved] = useState(false)
-  const [tab, setTab] = useState<'company' | 'employees' | 'vacation'>('company')
+  const [tab, setTab] = useState<'company' | 'overtime' | 'employees'>('company')
   const [showAddForm, setShowAddForm] = useState(false)
+  const [showRuleForm, setShowRuleForm] = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newName, setNewName] = useState('')
@@ -144,6 +177,14 @@ export default function SettingsPage() {
   const [newAutoBreakMinutes, setNewAutoBreakMinutes] = useState('')
   const [addError, setAddError] = useState('')
   const [addLoading, setAddLoading] = useState(false)
+
+  const [ruleLabel, setRuleLabel] = useState('')
+  const [ruleUseDate, setRuleUseDate] = useState(false)
+  const [ruleDay, setRuleDay] = useState('1')
+  const [ruleDate, setRuleDate] = useState('')
+  const [ruleStart, setRuleStart] = useState('')
+  const [ruleEnd, setRuleEnd] = useState('')
+
   const supabase = createClient()
 
   useEffect(() => {
@@ -153,29 +194,39 @@ export default function SettingsPage() {
 
   async function load() {
     const currentYear = new Date().getFullYear()
-    const [{ data: s }, { data: e }, { data: b }, { data: v }] = await Promise.all([
+    const [{ data: s }, { data: e }, { data: b }, { data: v }, { data: o }, { data: ot }] = await Promise.all([
       supabase.from('company_settings').select('*').single(),
       supabase.from('profiles').select('*').order('full_name'),
       supabase.from('vacation_balances').select('*').eq('year', currentYear),
       supabase.from('vacation_requests').select('*').eq('status', 'approved'),
+      supabase.from('organizations').select('*').single(),
+      supabase.from('overtime_rules').select('*').order('created_at', { ascending: false }),
     ])
     setSettings(s)
     setEmployees(e ?? [])
     setBalances(b ?? [])
     setVacationRequests(v ?? [])
+    setOrganization(o)
+    setOvertimeRules(ot ?? [])
   }
 
   async function saveSettings() {
-    if (!settings) return
-    await supabase.from('company_settings').update({
-      break_mode: settings.break_mode,
-      auto_break_minutes: settings.auto_break_minutes,
-      reminder_clock_in: settings.reminder_clock_in,
-      reminder_clock_out: settings.reminder_clock_out,
-      annual_vacation_days: settings.annual_vacation_days,
-      vacation_pay_percent: settings.vacation_pay_percent,
-      max_carryover_days: settings.max_carryover_days,
-    }).eq('id', settings.id)
+    if (!settings || !organization) return
+    await Promise.all([
+      supabase.from('company_settings').update({
+        break_mode: settings.break_mode,
+        auto_break_minutes: settings.auto_break_minutes,
+        reminder_clock_in: settings.reminder_clock_in,
+        reminder_clock_out: settings.reminder_clock_out,
+        annual_vacation_days: settings.annual_vacation_days,
+        vacation_pay_percent: settings.vacation_pay_percent,
+        max_carryover_days: settings.max_carryover_days,
+      }).eq('id', settings.id),
+      supabase.from('organizations').update({
+        name: organization.name,
+        org_number: organization.org_number,
+      }).eq('id', organization.id),
+    ])
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
@@ -233,25 +284,73 @@ export default function SettingsPage() {
     await load()
   }
 
-  if (!profile || profile.role !== 'admin' || !settings) return null
+  async function handleAddRule(e: React.FormEvent) {
+    e.preventDefault()
+    if (!profile) return
+
+    await supabase.from('overtime_rules').insert({
+      organization_id: profile.organization_id,
+      label: ruleLabel || null,
+      day_of_week: ruleUseDate ? null : Number(ruleDay),
+      specific_date: ruleUseDate ? ruleDate : null,
+      start_time: ruleStart,
+      end_time: ruleEnd,
+    })
+
+    setShowRuleForm(false)
+    setRuleLabel('')
+    setRuleUseDate(false)
+    setRuleDay('1')
+    setRuleDate('')
+    setRuleStart('')
+    setRuleEnd('')
+    await load()
+  }
+
+  async function deleteRule(id: number) {
+    await supabase.from('overtime_rules').delete().eq('id', id)
+    setOvertimeRules(prev => prev.filter(r => r.id !== id))
+  }
+
+  if (!profile || profile.role !== 'admin' || !settings || !organization) return null
 
   return (
     <div className="max-w-md mx-auto px-4 pt-8">
       <h1 className="text-2xl font-bold text-gray-900 mb-5">{l.title}</h1>
 
       <div className="flex bg-gray-100 rounded-xl p-1 mb-5">
-        {(['company', 'employees', 'vacation'] as const).map(t => (
+        {(['company', 'overtime', 'employees'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${
               tab === t ? 'bg-white shadow text-blue-700' : 'text-gray-600'
             }`}>
-            {t === 'company' ? l.tabCompany : t === 'employees' ? l.tabEmployees : l.tabVacation}
+            {t === 'company' ? l.tabCompany : t === 'overtime' ? l.tabOvertime : l.tabEmployees}
           </button>
         ))}
       </div>
 
       {tab === 'company' ? (
         <div className="space-y-5">
+          <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 space-y-4">
+            <h2 className="font-semibold text-gray-900">{l.companyInfo}</h2>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">{l.companyName}</label>
+              <input type="text"
+                value={organization.name}
+                onChange={e => setOrganization(o => o ? { ...o, name: e.target.value } : o)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">{l.orgNumber}</label>
+              <input type="text" placeholder="XXXXXX-XXXX"
+                value={organization.org_number ?? ''}
+                onChange={e => setOrganization(o => o ? { ...o, org_number: e.target.value || null } : o)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+              />
+            </div>
+          </div>
+
           <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 space-y-4">
             <h2 className="font-semibold text-gray-900">{l.breakHandling}</h2>
             <div className="flex gap-3">
@@ -336,7 +435,93 @@ export default function SettingsPage() {
             {saved ? l.saved : l.save}
           </button>
         </div>
-      ) : tab === 'employees' ? (
+      ) : tab === 'overtime' ? (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">{l.overtimeIntro}</p>
+          <button
+            onClick={() => setShowRuleForm(v => !v)}
+            className="w-full bg-blue-700 text-white font-semibold py-3 rounded-xl"
+          >
+            {l.addRule}
+          </button>
+
+          {showRuleForm && (
+            <form onSubmit={handleAddRule} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">{l.ruleLabel}</label>
+                <input type="text" value={ruleLabel} onChange={e => setRuleLabel(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+              </div>
+
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <input type="checkbox" checked={ruleUseDate} onChange={e => setRuleUseDate(e.target.checked)} />
+                {l.ruleAllDays}
+              </label>
+
+              {ruleUseDate ? (
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{l.ruleDate}</label>
+                  <input type="date" required value={ruleDate} onChange={e => setRuleDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{l.ruleDay}</label>
+                  <select value={ruleDay} onChange={e => setRuleDay(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2">
+                    {l.weekdays.map((day, i) => (
+                      <option key={i} value={i}>{day}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{l.ruleStart}</label>
+                  <input type="time" required value={ruleStart} onChange={e => setRuleStart(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{l.ruleEnd}</label>
+                  <input type="time" required value={ruleEnd} onChange={e => setRuleEnd(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowRuleForm(false)}
+                  className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600">
+                  {l.cancel}
+                </button>
+                <button type="submit"
+                  className="flex-1 bg-blue-700 text-white py-2 rounded-lg text-sm font-medium">
+                  {l.create}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {overtimeRules.length === 0 ? (
+            <p className="text-center text-gray-500 py-8">{l.noRules}</p>
+          ) : (
+            overtimeRules.map(rule => (
+              <div key={rule.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex justify-between items-center">
+                <div>
+                  <p className="font-medium text-gray-900">{rule.label || '—'}</p>
+                  <p className="text-sm text-gray-600">
+                    {rule.specific_date ? rule.specific_date : l.weekdays[rule.day_of_week ?? 0]}
+                    {' · '}{rule.start_time}–{rule.end_time}
+                  </p>
+                </div>
+                <button onClick={() => deleteRule(rule.id)} className="text-xs text-red-600 font-medium">
+                  {l.delete}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
         <div className="space-y-3">
           <button
             onClick={() => setShowAddForm(v => !v)}
@@ -443,156 +628,146 @@ export default function SettingsPage() {
             </form>
           )}
 
-          {employees.map(emp => (
-            <div key={emp.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="font-semibold text-gray-900">{emp.full_name}</p>
-                  <p className="text-xs text-gray-600">{emp.email}</p>
-                </div>
-                <button
-                  onClick={() => updateEmployee(emp.id, { active: !emp.active })}
-                  className={`text-xs px-2 py-1 rounded-full font-medium ${
-                    emp.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                  }`}>
-                  {emp.active ? l.active : l.inactive}
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">{l.employmentType}</label>
-                  <select
-                    value={emp.employment_type}
-                    onChange={e => updateEmployee(emp.id, { employment_type: e.target.value as 'hourly' | 'monthly' })}
-                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
-                  >
-                    <option value="hourly">{l.hourly}</option>
-                    <option value="monthly">{l.monthly}</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">
-                    {emp.employment_type === 'hourly' ? l.hourlyRate : l.monthlySalary}
-                  </label>
-                  <input
-                    type="number"
-                    value={emp.employment_type === 'hourly' ? (emp.hourly_rate ?? '') : (emp.monthly_salary ?? '')}
-                    onChange={e => {
-                      const val = e.target.value ? Number(e.target.value) : null
-                      updateEmployee(emp.id, emp.employment_type === 'hourly'
-                        ? { hourly_rate: val }
-                        : { monthly_salary: val })
-                    }}
-                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">{l.personnummer}</label>
-                  <input
-                    type="text"
-                    placeholder="ÅÅÅÅMMDD-XXXX"
-                    value={emp.personnummer ?? ''}
-                    onChange={e => updateEmployee(emp.id, { personnummer: e.target.value || null })}
-                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">{l.fortnoxId}</label>
-                  <input
-                    type="text"
-                    value={emp.fortnox_employee_number ?? ''}
-                    onChange={e => updateEmployee(emp.id, { fortnox_employee_number: e.target.value || null })}
-                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">{l.reminderClockInPersonal}</label>
-                  <input
-                    type="time"
-                    value={emp.reminder_clock_in ?? ''}
-                    onChange={e => updateEmployee(emp.id, { reminder_clock_in: e.target.value || null })}
-                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">{l.reminderClockOutPersonal}</label>
-                  <input
-                    type="time"
-                    value={emp.reminder_clock_out ?? ''}
-                    onChange={e => updateEmployee(emp.id, { reminder_clock_out: e.target.value || null })}
-                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">{l.breakModePersonal}</label>
-                  <select
-                    value={emp.break_mode ?? ''}
-                    onChange={e => updateEmployee(emp.id, { break_mode: (e.target.value || null) as 'auto' | 'manual' | null })}
-                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
-                  >
-                    <option value="">{l.breakModeDefault}</option>
-                    <option value="auto">{l.auto}</option>
-                    <option value="manual">{l.manual}</option>
-                  </select>
-                </div>
-                {emp.break_mode === 'auto' && (
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">{l.autoBreakMinutesPersonal}</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={120}
-                      value={emp.auto_break_minutes ?? ''}
-                      onChange={e => updateEmployee(emp.id, { auto_break_minutes: e.target.value ? Number(e.target.value) : null })}
-                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-3">
           {employees.map(emp => {
             const balance = balances.find(b => b.user_id === emp.id) ?? null
             const requests = vacationRequests.filter(r => r.user_id === emp.id)
-            const summary = calculateVacationSummary(emp, settings, balance, requests)
+            const vacationSummary = calculateVacationSummary(emp, settings, balance, requests)
 
             return (
               <div key={emp.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                <div className="flex justify-between items-start mb-2">
-                  <p className="font-semibold text-gray-900">{emp.full_name}</p>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                    {emp.employment_type === 'hourly' ? l.hourly : l.monthly}
-                  </span>
-                </div>
-                {emp.employment_type === 'hourly' ? (
-                  <p className="text-sm text-gray-600">
-                    {l.hourlyVacationNote(settings.vacation_pay_percent)}
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <p className="text-lg font-bold text-gray-900">{summary.available}</p>
-                      <p className="text-xs text-gray-500">{l.available}</p>
-                    </div>
-                    <div>
-                      <p className="text-lg font-bold text-gray-900">{summary.earnedThisYear}</p>
-                      <p className="text-xs text-gray-500">{l.earnedThisYear}</p>
-                    </div>
-                    <div>
-                      <p className="text-lg font-bold text-gray-900">{summary.usedThisYear}</p>
-                      <p className="text-xs text-gray-500">{l.used}</p>
-                    </div>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="font-semibold text-gray-900">{emp.full_name}</p>
+                    <p className="text-xs text-gray-600">{emp.email}</p>
                   </div>
-                )}
+                  <button
+                    onClick={() => updateEmployee(emp.id, { active: !emp.active })}
+                    className={`text-xs px-2 py-1 rounded-full font-medium ${
+                      emp.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                    {emp.active ? l.active : l.inactive}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">{l.employmentType}</label>
+                    <select
+                      value={emp.employment_type}
+                      onChange={e => updateEmployee(emp.id, { employment_type: e.target.value as 'hourly' | 'monthly' })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                    >
+                      <option value="hourly">{l.hourly}</option>
+                      <option value="monthly">{l.monthly}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">
+                      {emp.employment_type === 'hourly' ? l.hourlyRate : l.monthlySalary}
+                    </label>
+                    <input
+                      type="number"
+                      value={emp.employment_type === 'hourly' ? (emp.hourly_rate ?? '') : (emp.monthly_salary ?? '')}
+                      onChange={e => {
+                        const val = e.target.value ? Number(e.target.value) : null
+                        updateEmployee(emp.id, emp.employment_type === 'hourly'
+                          ? { hourly_rate: val }
+                          : { monthly_salary: val })
+                      }}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Vacation summary, merged in */}
+                <div className="mt-2 bg-gray-50 rounded-lg p-2">
+                  {emp.employment_type === 'hourly' ? (
+                    <p className="text-xs text-gray-600">{l.hourlyVacationNote(settings.vacation_pay_percent)}</p>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <p className="text-sm font-bold text-gray-900">{vacationSummary.available}</p>
+                        <p className="text-xs text-gray-500">{l.available}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-gray-900">{vacationSummary.earnedThisYear}</p>
+                        <p className="text-xs text-gray-500">{l.earnedThisYear}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-gray-900">{vacationSummary.usedThisYear}</p>
+                        <p className="text-xs text-gray-500">{l.used}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">{l.personnummer}</label>
+                    <input
+                      type="text"
+                      placeholder="ÅÅÅÅMMDD-XXXX"
+                      value={emp.personnummer ?? ''}
+                      onChange={e => updateEmployee(emp.id, { personnummer: e.target.value || null })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">{l.fortnoxId}</label>
+                    <input
+                      type="text"
+                      value={emp.fortnox_employee_number ?? ''}
+                      onChange={e => updateEmployee(emp.id, { fortnox_employee_number: e.target.value || null })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">{l.reminderClockInPersonal}</label>
+                    <input
+                      type="time"
+                      value={emp.reminder_clock_in ?? ''}
+                      onChange={e => updateEmployee(emp.id, { reminder_clock_in: e.target.value || null })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">{l.reminderClockOutPersonal}</label>
+                    <input
+                      type="time"
+                      value={emp.reminder_clock_out ?? ''}
+                      onChange={e => updateEmployee(emp.id, { reminder_clock_out: e.target.value || null })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">{l.breakModePersonal}</label>
+                    <select
+                      value={emp.break_mode ?? ''}
+                      onChange={e => updateEmployee(emp.id, { break_mode: (e.target.value || null) as 'auto' | 'manual' | null })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                    >
+                      <option value="">{l.breakModeDefault}</option>
+                      <option value="auto">{l.auto}</option>
+                      <option value="manual">{l.manual}</option>
+                    </select>
+                  </div>
+                  {emp.break_mode === 'auto' && (
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">{l.autoBreakMinutesPersonal}</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={120}
+                        value={emp.auto_break_minutes ?? ''}
+                        onChange={e => updateEmployee(emp.id, { auto_break_minutes: e.target.value ? Number(e.target.value) : null })}
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
             )
           })}
