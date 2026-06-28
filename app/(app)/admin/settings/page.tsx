@@ -54,6 +54,9 @@ const labels = {
     earnedThisYear: 'Intjänade i år',
     used: 'Använda',
     hourlyVacationNote: (pct: number) => `Får ${pct}% semesterersättning utbetald löpande på timlönen — ingen dagräkning.`,
+    reminderClockInPersonal: 'Påminnelse instämpling (valfritt)',
+    reminderClockOutPersonal: 'Påminnelse utstämpling (valfritt)',
+    reminderNote: 'Lämna tomt för att använda företagets standardtid.',
   },
   uk: {
     title: 'Налаштування',
@@ -101,6 +104,9 @@ const labels = {
     earnedThisYear: 'Накопичено цього року',
     used: 'Використано',
     hourlyVacationNote: (pct: number) => `Отримує ${pct}% відпускних, що нараховуються на погодинну ставку — облік днів не потрібен.`,
+    reminderClockInPersonal: 'Нагадування про прихід (необов\'язково)',
+    reminderClockOutPersonal: 'Нагадування про відхід (необов\'язково)',
+    reminderNote: 'Залиште порожнім, щоб використовувати стандартний час компанії.',
   },
 }
 
@@ -124,6 +130,8 @@ export default function SettingsPage() {
   const [newEmploymentType, setNewEmploymentType] = useState<'hourly' | 'monthly'>('hourly')
   const [newRate, setNewRate] = useState('')
   const [newStartDate, setNewStartDate] = useState('')
+  const [newReminderIn, setNewReminderIn] = useState('')
+  const [newReminderOut, setNewReminderOut] = useState('')
   const [addError, setAddError] = useState('')
   const [addLoading, setAddLoading] = useState(false)
   const supabase = createClient()
@@ -184,6 +192,8 @@ export default function SettingsPage() {
         hourly_rate: newEmploymentType === 'hourly' ? Number(newRate) || null : null,
         monthly_salary: newEmploymentType === 'monthly' ? Number(newRate) || null : null,
         employment_start_date: newStartDate || undefined,
+        reminder_clock_in: newReminderIn || null,
+        reminder_clock_out: newReminderOut || null,
       }),
     })
 
@@ -203,6 +213,8 @@ export default function SettingsPage() {
     setNewEmploymentType('hourly')
     setNewRate('')
     setNewStartDate('')
+    setNewReminderIn('')
+    setNewReminderOut('')
     setAddLoading(false)
     await load()
   }
@@ -367,6 +379,19 @@ export default function SettingsPage() {
                 <input type="date" value={newStartDate} onChange={e => setNewStartDate(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2" />
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{l.reminderClockInPersonal}</label>
+                  <input type="time" value={newReminderIn} onChange={e => setNewReminderIn(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{l.reminderClockOutPersonal}</label>
+                  <input type="time" value={newReminderOut} onChange={e => setNewReminderOut(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">{l.reminderNote}</p>
 
               {addError && (
                 <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">{addError}</p>
@@ -446,6 +471,26 @@ export default function SettingsPage() {
                     type="text"
                     value={emp.fortnox_employee_number ?? ''}
                     onChange={e => updateEmployee(emp.id, { fortnox_employee_number: e.target.value || null })}
+                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">{l.reminderClockInPersonal}</label>
+                  <input
+                    type="time"
+                    value={emp.reminder_clock_in ?? ''}
+                    onChange={e => updateEmployee(emp.id, { reminder_clock_in: e.target.value || null })}
+                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">{l.reminderClockOutPersonal}</label>
+                  <input
+                    type="time"
+                    value={emp.reminder_clock_out ?? ''}
+                    onChange={e => updateEmployee(emp.id, { reminder_clock_out: e.target.value || null })}
                     className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
                   />
                 </div>

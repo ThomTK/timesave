@@ -27,6 +27,8 @@ export interface Profile {
   employment_start_date: string
   personnummer: string | null
   fortnox_employee_number: string | null
+  reminder_clock_in: string | null
+  reminder_clock_out: string | null
   created_at: string
 }
 

@@ -46,6 +46,12 @@ const labels = {
     noPendingVacations: 'Inga väntande semesteransökningar',
     noSickLeave: 'Inga sjukanmälningar',
     ongoing: 'Pågående',
+    clockedInNow: 'Instämplade nu',
+    nobodyClockedIn: 'Ingen är instämplad just nu',
+    totalThisMonth: 'Totalt denna månad',
+    totalHours: 'timmar',
+    totalCost: 'beräknad kostnad (timanställda)',
+    allEmployees: 'Alla anställda',
   },
   uk: {
     title: 'Адмін',
@@ -67,6 +73,12 @@ const labels = {
     noPendingVacations: 'Немає заявок на відпустку',
     noSickLeave: 'Немає повідомлень про лікарняний',
     ongoing: 'Триває',
+    clockedInNow: 'На роботі зараз',
+    nobodyClockedIn: 'Зараз ніхто не на роботі',
+    totalThisMonth: 'Всього цього місяця',
+    totalHours: 'годин',
+    totalCost: 'орієнтовна вартість (погодинні)',
+    allEmployees: 'Всі співробітники',
   },
 }
 
@@ -174,6 +186,14 @@ export default function AdminPage() {
   if (!profile || profile.role !== 'admin') return null
 
   const currentMonth = format(new Date(), 'MMMM yyyy', { locale: dateLocale })
+  const activeNow = summaries.filter(s => s.activeEntry)
+  const totalMinutesAll = summaries.reduce((sum, s) => sum + s.totalMinutes, 0)
+  const totalCost = summaries.reduce((sum, s) => {
+    if (s.profile.employment_type === 'hourly' && s.profile.hourly_rate) {
+      return sum + (s.totalMinutes / 60) * s.profile.hourly_rate
+    }
+    return sum
+  }, 0)
 
   return (
     <div className="max-w-md mx-auto px-4 pt-8">
@@ -216,34 +236,73 @@ export default function AdminPage() {
       {loading ? (
         <p className="text-center text-gray-500 py-8">{l.loading}</p>
       ) : tab === 'overview' ? (
-        <div className="space-y-3">
-          {summaries.map(({ profile: p, totalMinutes, activeEntry }) => {
-            const salary = p.employment_type === 'hourly' && p.hourly_rate
-              ? ((totalMinutes / 60) * p.hourly_rate).toFixed(0)
-              : null
-
-            return (
-              <div key={p.id} className={`bg-white rounded-xl p-4 shadow-sm border border-gray-100 ${activeEntry ? 'border-l-4 border-green-400' : ''}`}>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="font-semibold text-gray-900">{p.full_name}</p>
-                    <p className="text-sm text-gray-600">{formatDuration(totalMinutes)}</p>
-                    {activeEntry && (
-                      <p className="text-xs text-green-600 font-medium">
-                        {l.clockedSince} {format(new Date(activeEntry.clock_in), 'HH:mm')}
+        <div className="space-y-5">
+          {/* Currently clocked in */}
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">{l.clockedInNow}</h2>
+            {activeNow.length === 0 ? (
+              <p className="text-sm text-gray-500 bg-white border border-gray-100 rounded-xl p-4">{l.nobodyClockedIn}</p>
+            ) : (
+              <div className="space-y-2">
+                {activeNow.map(({ profile: p, activeEntry }) => (
+                  <div key={p.id} className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-3">
+                    <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse shrink-0" />
+                    <div>
+                      <p className="font-medium text-gray-900">{p.full_name}</p>
+                      <p className="text-xs text-green-700">
+                        {l.clockedSince} {format(new Date(activeEntry!.clock_in), 'HH:mm')}
                       </p>
-                    )}
-                  </div>
-                  {salary && (
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-gray-800">{Number(salary).toLocaleString('sv-SE')} kr</p>
-                      <p className="text-xs text-gray-500">{l.earned}</p>
                     </div>
-                  )}
-                </div>
+                  </div>
+                ))}
               </div>
-            )
-          })}
+            )}
+          </div>
+
+          {/* Monthly total */}
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+            <p className="text-sm text-blue-700 mb-1">{l.totalThisMonth}</p>
+            <p className="text-2xl font-bold text-blue-900">{formatDuration(totalMinutesAll)} <span className="text-sm font-normal">{l.totalHours}</span></p>
+            {totalCost > 0 && (
+              <p className="text-xs text-blue-700 mt-1">
+                ≈ {Math.round(totalCost).toLocaleString('sv-SE')} kr — {l.totalCost}
+              </p>
+            )}
+          </div>
+
+          {/* Per-employee list */}
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">{l.allEmployees}</h2>
+            <div className="space-y-2">
+              {summaries.map(({ profile: p, totalMinutes, activeEntry }) => {
+                const salary = p.employment_type === 'hourly' && p.hourly_rate
+                  ? ((totalMinutes / 60) * p.hourly_rate).toFixed(0)
+                  : null
+
+                return (
+                  <div key={p.id} className={`bg-white rounded-xl p-4 shadow-sm border border-gray-100 ${activeEntry ? 'border-l-4 border-green-400' : ''}`}>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-semibold text-gray-900">{p.full_name}</p>
+                        <p className="text-sm text-gray-600">{formatDuration(totalMinutes)}</p>
+                        {activeEntry && (
+                          <p className="text-xs text-green-600 font-medium">
+                            {l.clockedSince} {format(new Date(activeEntry.clock_in), 'HH:mm')}
+                          </p>
+                        )}
+                      </div>
+                      {salary && (
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-gray-800">{Number(salary).toLocaleString('sv-SE')} kr</p>
+                          <p className="text-xs text-gray-500">{l.earned}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
       ) : tab === 'corrections' ? (
         <div className="space-y-3">

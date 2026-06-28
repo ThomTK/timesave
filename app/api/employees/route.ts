@@ -17,8 +17,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { email, password, full_name, role, employment_type, hourly_rate, monthly_salary, language, employment_start_date } =
-    await request.json()
+  const {
+    email, password, full_name, role, employment_type, hourly_rate, monthly_salary,
+    language, employment_start_date, reminder_clock_in, reminder_clock_out,
+  } = await request.json()
 
   if (!email || !password || !full_name) {
     return NextResponse.json({ error: 'Saknar obligatoriska fält' }, { status: 400 })
@@ -48,6 +50,8 @@ export async function POST(request: NextRequest) {
       monthly_salary: monthly_salary ?? null,
       language: language ?? 'sv',
       ...(employment_start_date ? { employment_start_date } : {}),
+      reminder_clock_in: reminder_clock_in || null,
+      reminder_clock_out: reminder_clock_out || null,
     })
     .eq('id', created.user.id)
 
