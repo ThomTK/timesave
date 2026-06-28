@@ -73,9 +73,15 @@ const labels = {
     ruleDate: 'Datum',
     ruleStart: 'Starttid',
     ruleEnd: 'Sluttid',
+    rulePayMultiplier: 'Lönemultiplikator (t.ex. 2 = dubbel lön)',
     weekdays: ['Söndag', 'Måndag', 'Tisdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lördag'],
     noRules: 'Inga övertidsregler ännu',
     delete: 'Ta bort',
+    obMode: 'OB-hantering',
+    obModeManual: 'Manuell',
+    obModeAutomatic: 'Automatisk',
+    obModeManualNote: 'Du registrerar OB-timmar själv per anställd och tillfälle (rekommenderas om du beslutar OB från fall till fall).',
+    obModeAutomaticNote: 'Systemet räknar automatiskt ut OB baserat på övertidsreglerna nedan, för alla stämplingar som överlappar dem.',
   },
   uk: {
     title: 'Налаштування',
@@ -142,9 +148,15 @@ const labels = {
     ruleDate: 'Дата',
     ruleStart: 'Час початку',
     ruleEnd: 'Час закінчення',
+    rulePayMultiplier: 'Множник оплати (напр. 2 = подвійна оплата)',
     weekdays: ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П\'ятниця', 'Субота'],
     noRules: 'Ще немає правил понаднормової роботи',
     delete: 'Видалити',
+    obMode: 'Управління понаднормовими',
+    obModeManual: 'Вручну',
+    obModeAutomatic: 'Автоматично',
+    obModeManualNote: 'Ви самостійно реєструєте понаднормові години для кожного співробітника окремо (рекомендовано, якщо рішення приймається індивідуально).',
+    obModeAutomaticNote: 'Система автоматично розраховує понаднормові на основі правил нижче, для всіх записів, що перетинаються з ними.',
   },
 }
 
@@ -184,6 +196,7 @@ export default function SettingsPage() {
   const [ruleDate, setRuleDate] = useState('')
   const [ruleStart, setRuleStart] = useState('')
   const [ruleEnd, setRuleEnd] = useState('')
+  const [rulePayMultiplier, setRulePayMultiplier] = useState('2.00')
 
   const supabase = createClient()
 
@@ -221,6 +234,7 @@ export default function SettingsPage() {
         annual_vacation_days: settings.annual_vacation_days,
         vacation_pay_percent: settings.vacation_pay_percent,
         max_carryover_days: settings.max_carryover_days,
+        overtime_mode: settings.overtime_mode,
       }).eq('id', settings.id),
       supabase.from('organizations').update({
         name: organization.name,
@@ -295,6 +309,7 @@ export default function SettingsPage() {
       specific_date: ruleUseDate ? ruleDate : null,
       start_time: ruleStart,
       end_time: ruleEnd,
+      pay_multiplier: Number(rulePayMultiplier) || 2,
     })
 
     setShowRuleForm(false)
@@ -304,6 +319,7 @@ export default function SettingsPage() {
     setRuleDate('')
     setRuleStart('')
     setRuleEnd('')
+    setRulePayMultiplier('2.00')
     await load()
   }
 
@@ -437,6 +453,30 @@ export default function SettingsPage() {
         </div>
       ) : tab === 'overtime' ? (
         <div className="space-y-3">
+          <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 space-y-3">
+            <h2 className="font-semibold text-gray-900">{l.obMode}</h2>
+            <div className="flex gap-3">
+              {(['manual', 'automatic'] as const).map(mode => (
+                <button key={mode} type="button"
+                  onClick={() => setSettings(s => s ? { ...s, overtime_mode: mode } : s)}
+                  className={`flex-1 py-3 rounded-lg text-sm font-medium border-2 transition-colors ${
+                    settings.overtime_mode === mode
+                      ? 'border-blue-600 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 text-gray-600'
+                  }`}>
+                  {mode === 'manual' ? l.obModeManual : l.obModeAutomatic}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500">
+              {settings.overtime_mode === 'manual' ? l.obModeManualNote : l.obModeAutomaticNote}
+            </p>
+            <button onClick={saveSettings}
+              className="w-full bg-blue-700 text-white font-semibold py-2.5 rounded-xl text-sm">
+              {saved ? l.saved : l.save}
+            </button>
+          </div>
+
           <p className="text-sm text-gray-600">{l.overtimeIntro}</p>
           <button
             onClick={() => setShowRuleForm(v => !v)}
@@ -489,6 +529,13 @@ export default function SettingsPage() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">{l.rulePayMultiplier}</label>
+                <input type="number" step="0.1" min={1} max={5} required value={rulePayMultiplier}
+                  onChange={e => setRulePayMultiplier(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+              </div>
+
               <div className="flex gap-3">
                 <button type="button" onClick={() => setShowRuleForm(false)}
                   className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600">
@@ -512,6 +559,7 @@ export default function SettingsPage() {
                   <p className="text-sm text-gray-600">
                     {rule.specific_date ? rule.specific_date : l.weekdays[rule.day_of_week ?? 0]}
                     {' · '}{rule.start_time}–{rule.end_time}
+                    {' · '}{rule.pay_multiplier}x
                   </p>
                 </div>
                 <button onClick={() => deleteRule(rule.id)} className="text-xs text-red-600 font-medium">

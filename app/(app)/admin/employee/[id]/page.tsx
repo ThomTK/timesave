@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/components/UserProvider'
-import { Profile, TimeEntry, EntryType } from '@/lib/types'
+import { CompanySettings, OvertimeRule, Profile, TimeEntry, EntryType } from '@/lib/types'
+import { calculateEntryCost } from '@/lib/overtime'
 import { format, differenceInMinutes, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { sv as dateSv, uk as dateUk } from 'date-fns/locale'
 
@@ -38,6 +39,10 @@ const labels = {
     ongoing: 'Pågående',
     empty: 'Inga stämplingar',
     loading: 'Laddar...',
+    payMultiplier: 'Lönemultiplikator (t.ex. 2 = dubbel lön)',
+    payMultiplierNote: 'Används för OB/övertid du registrerar manuellt.',
+    cost: 'Kostnad',
+    totalCost: 'Beräknad kostnad',
   },
   uk: {
     back: '← Назад',
@@ -62,6 +67,10 @@ const labels = {
     ongoing: 'Триває',
     empty: 'Немає записів',
     loading: 'Завантаження...',
+    payMultiplier: 'Множник оплати (напр. 2 = подвійна оплата)',
+    payMultiplierNote: 'Використовується для понаднормових, які ви реєструєте вручну.',
+    cost: 'Вартість',
+    totalCost: 'Орієнтовна вартість',
   },
 }
 
@@ -72,10 +81,11 @@ interface EntryForm {
   clockOutTime: string
   breakMinutes: string
   entryType: EntryType
+  payMultiplier: string
 }
 
 function emptyForm(): EntryForm {
-  return { date: format(new Date(), 'yyyy-MM-dd'), clockInTime: '', clockOutTime: '', breakMinutes: '0', entryType: 'work' }
+  return { date: format(new Date(), 'yyyy-MM-dd'), clockInTime: '', clockOutTime: '', breakMinutes: '0', entryType: 'work', payMultiplier: '1.00' }
 }
 
 export default function AdminEmployeeDetailPage() {
@@ -89,6 +99,8 @@ export default function AdminEmployeeDetailPage() {
 
   const [employee, setEmployee] = useState<Profile | null>(null)
   const [entries, setEntries] = useState<TimeEntry[]>([])
+  const [settings, setSettings] = useState<CompanySettings | null>(null)
+  const [overtimeRules, setOvertimeRules] = useState<OvertimeRule[]>([])
   const [month, setMonth] = useState<'current' | 'previous'>('current')
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -107,14 +119,18 @@ export default function AdminEmployeeDetailPage() {
     const start = startOfMonth(base).toISOString()
     const end = endOfMonth(base).toISOString()
 
-    const [{ data: emp }, { data: e }] = await Promise.all([
+    const [{ data: emp }, { data: e }, { data: s }, { data: ot }] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', employeeId).single(),
       supabase.from('time_entries').select('*').eq('user_id', employeeId)
         .gte('clock_in', start).lte('clock_in', end).order('clock_in', { ascending: false }),
+      supabase.from('company_settings').select('*').single(),
+      supabase.from('overtime_rules').select('*'),
     ])
 
     setEmployee(emp)
     setEntries(e ?? [])
+    setSettings(s)
+    setOvertimeRules(ot ?? [])
     setLoading(false)
   }
 
@@ -131,6 +147,7 @@ export default function AdminEmployeeDetailPage() {
       clockOutTime: entry.clock_out ? format(new Date(entry.clock_out), 'HH:mm') : '',
       breakMinutes: String(entry.break_minutes),
       entryType: entry.entry_type,
+      payMultiplier: String(entry.pay_multiplier ?? 1),
     })
     setShowForm(true)
   }
@@ -148,6 +165,7 @@ export default function AdminEmployeeDetailPage() {
       clock_out: clockOut,
       break_minutes: Number(form.breakMinutes) || 0,
       entry_type: form.entryType,
+      pay_multiplier: Number(form.payMultiplier) || 1,
     }
 
     if (form.id) {
@@ -174,6 +192,10 @@ export default function AdminEmployeeDetailPage() {
       return sum + Math.max(0, mins)
     }, 0)
 
+  const totalCost = settings && employee?.hourly_rate
+    ? entries.reduce((sum, e) => sum + calculateEntryCost(e, employee.hourly_rate!, settings.overtime_mode, overtimeRules), 0)
+    : null
+
   if (!profile || profile.role !== 'admin') return null
 
   return (
@@ -199,6 +221,9 @@ export default function AdminEmployeeDetailPage() {
       <div className="bg-blue-50 rounded-xl p-4 mb-4">
         <p className="text-sm text-blue-700">{l.total}</p>
         <p className="text-2xl font-bold text-blue-900">{formatDuration(totalMinutes)}</p>
+        {totalCost !== null && (
+          <p className="text-sm text-blue-700 mt-1">{l.totalCost}: {Math.round(totalCost).toLocaleString('sv-SE')} kr</p>
+        )}
       </div>
 
       <button onClick={openAdd} className="w-full bg-blue-700 text-white font-semibold py-3 rounded-xl mb-4">
@@ -246,6 +271,15 @@ export default function AdminEmployeeDetailPage() {
               </select>
             </div>
           </div>
+          {(form.entryType === 'overtime' || settings?.overtime_mode === 'manual') && (
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">{l.payMultiplier}</label>
+              <input type="number" step="0.1" min={1} max={5} value={form.payMultiplier}
+                onChange={e => setForm(f => ({ ...f, payMultiplier: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+              <p className="text-xs text-gray-500 mt-1">{l.payMultiplierNote}</p>
+            </div>
+          )}
           <div className="flex gap-3">
             <button type="button" onClick={() => setShowForm(false)}
               className="flex-1 border border-gray-300 py-2 rounded-lg text-sm text-gray-600">
@@ -287,7 +321,12 @@ export default function AdminEmployeeDetailPage() {
                     </span>
                   </div>
                   <div className="text-right">
-                    {mins !== null && <p className="font-bold text-gray-800 mb-2">{formatDuration(mins)}</p>}
+                    {mins !== null && <p className="font-bold text-gray-800">{formatDuration(mins)}</p>}
+                    {settings && employee?.hourly_rate && entry.clock_out && (
+                      <p className="text-xs text-gray-500 mb-2">
+                        {Math.round(calculateEntryCost(entry, employee.hourly_rate, settings.overtime_mode, overtimeRules)).toLocaleString('sv-SE')} kr
+                      </p>
+                    )}
                     <div className="flex gap-2">
                       <button onClick={() => openEdit(entry)} className="text-xs text-blue-700 font-medium">{l.edit}</button>
                       <button onClick={() => handleDelete(entry.id)} className="text-xs text-red-600 font-medium">{l.delete}</button>

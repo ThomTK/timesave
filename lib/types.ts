@@ -66,6 +66,7 @@ export interface TimeEntry {
   note: string | null
   approved: boolean | null
   approved_by: string | null
+  pay_multiplier: number
   created_at: string
   profiles?: Profile
 }
@@ -108,6 +109,7 @@ export interface CompanySettings {
   annual_vacation_days: number
   vacation_pay_percent: number
   max_carryover_days: number
+  overtime_mode: 'manual' | 'automatic'
   updated_at: string
 }
 
@@ -119,5 +121,6 @@ export interface OvertimeRule {
   start_time: string
   end_time: string
   label: string | null
+  pay_multiplier: number
   created_at: string
 }

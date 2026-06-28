@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/components/UserProvider'
-import { Profile, TimeEntry, CorrectionRequest, VacationRequest, SickLeaveReport } from '@/lib/types'
+import { CompanySettings, OvertimeRule, Profile, TimeEntry, CorrectionRequest, VacationRequest, SickLeaveReport } from '@/lib/types'
+import { calculateEntryCost } from '@/lib/overtime'
 import { format, differenceInMinutes, startOfMonth, endOfMonth } from 'date-fns'
 import { sv as dateSv, uk as dateUk } from 'date-fns/locale'
 import { useRouter } from 'next/navigation'
@@ -20,6 +21,7 @@ interface EmployeeSummary {
   profile: Profile
   totalMinutes: number
   activeEntry: TimeEntry | null
+  cost: number | null
 }
 
 const statusLabelByLang = {
@@ -122,13 +124,18 @@ export default function AdminPage() {
     const start = startOfMonth(new Date()).toISOString()
     const end = endOfMonth(new Date()).toISOString()
 
-    const [{ data: profiles }, { data: entries }, { data: corrections }, { data: vacations }, { data: sickLeave }] = await Promise.all([
+    const [{ data: profiles }, { data: entries }, { data: corrections }, { data: vacations }, { data: sickLeave }, { data: settingsData }, { data: rulesData }] = await Promise.all([
       supabase.from('profiles').select('*').eq('active', true).order('full_name'),
       supabase.from('time_entries').select('*').gte('clock_in', start).lte('clock_in', end),
       supabase.from('correction_requests').select('*, profiles(full_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('vacation_requests').select('*, profiles(full_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('sick_leave_reports').select('*, profiles(full_name)').order('created_at', { ascending: false }).limit(20),
+      supabase.from('company_settings').select('*').single(),
+      supabase.from('overtime_rules').select('*'),
     ])
+
+    const overtimeMode = (settingsData as CompanySettings | null)?.overtime_mode ?? 'manual'
+    const rules = (rulesData as OvertimeRule[]) ?? []
 
     const sums: EmployeeSummary[] = (profiles ?? []).map(p => {
       const userEntries = (entries ?? []).filter(e => e.user_id === p.id)
@@ -139,7 +146,10 @@ export default function AdminPage() {
           return sum + Math.max(0, mins)
         }, 0)
       const activeEntry = userEntries.find(e => !e.clock_out) ?? null
-      return { profile: p, totalMinutes, activeEntry }
+      const cost = p.employment_type === 'hourly' && p.hourly_rate
+        ? userEntries.reduce((sum, e) => sum + calculateEntryCost(e, p.hourly_rate!, overtimeMode, rules), 0)
+        : null
+      return { profile: p, totalMinutes, activeEntry, cost }
     })
 
     setSummaries(sums)
@@ -198,12 +208,10 @@ export default function AdminPage() {
   }
 
   function buildReportRows() {
-    return summaries.map(({ profile: p, totalMinutes }) => ({
+    return summaries.map(({ profile: p, totalMinutes, cost }) => ({
       [l.colName]: p.full_name,
       [l.colHours]: (totalMinutes / 60).toFixed(2),
-      [l.colCost]: p.employment_type === 'hourly' && p.hourly_rate
-        ? Math.round((totalMinutes / 60) * p.hourly_rate)
-        : '',
+      [l.colCost]: cost !== null ? Math.round(cost) : '',
     }))
   }
 
@@ -229,13 +237,10 @@ export default function AdminPage() {
     y += 6
     doc.line(14, y - 4, 196, y - 4)
 
-    for (const { profile: p, totalMinutes } of summaries) {
-      const cost = p.employment_type === 'hourly' && p.hourly_rate
-        ? Math.round((totalMinutes / 60) * p.hourly_rate)
-        : null
+    for (const { profile: p, totalMinutes, cost } of summaries) {
       doc.text(p.full_name, 14, y)
       doc.text((totalMinutes / 60).toFixed(2), 110, y)
-      if (cost !== null) doc.text(String(cost), 150, y)
+      if (cost !== null) doc.text(String(Math.round(cost)), 150, y)
       y += 7
     }
 
@@ -252,12 +257,7 @@ export default function AdminPage() {
   const currentMonth = format(new Date(), 'MMMM yyyy', { locale: dateLocale })
   const activeNow = summaries.filter(s => s.activeEntry)
   const totalMinutesAll = summaries.reduce((sum, s) => sum + s.totalMinutes, 0)
-  const totalCost = summaries.reduce((sum, s) => {
-    if (s.profile.employment_type === 'hourly' && s.profile.hourly_rate) {
-      return sum + (s.totalMinutes / 60) * s.profile.hourly_rate
-    }
-    return sum
-  }, 0)
+  const totalCost = summaries.reduce((sum, s) => sum + (s.cost ?? 0), 0)
 
   return (
     <div className="max-w-md mx-auto px-4 pt-8">
@@ -346,10 +346,8 @@ export default function AdminPage() {
           <div>
             <h2 className="text-sm font-semibold text-gray-700 mb-2">{l.allEmployees}</h2>
             <div className="space-y-2">
-              {summaries.map(({ profile: p, totalMinutes, activeEntry }) => {
-                const salary = p.employment_type === 'hourly' && p.hourly_rate
-                  ? ((totalMinutes / 60) * p.hourly_rate).toFixed(0)
-                  : null
+              {summaries.map(({ profile: p, totalMinutes, activeEntry, cost }) => {
+                const salary = cost !== null ? cost.toFixed(0) : null
 
                 return (
                   <button
