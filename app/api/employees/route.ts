@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
   const {
     email, password, full_name, role, employment_type, hourly_rate, monthly_salary,
     language, employment_start_date, reminder_clock_in, reminder_clock_out,
+    break_mode, auto_break_minutes,
   } = await request.json()
 
   if (!email || !password || !full_name) {
@@ -52,6 +53,8 @@ export async function POST(request: NextRequest) {
       ...(employment_start_date ? { employment_start_date } : {}),
       reminder_clock_in: reminder_clock_in || null,
       reminder_clock_out: reminder_clock_out || null,
+      break_mode: break_mode || null,
+      auto_break_minutes: auto_break_minutes ?? null,
     })
     .eq('id', created.user.id)
 

@@ -111,19 +111,22 @@ export default function DashboardPage() {
   }
 
   async function handleClockOut() {
-    if (!activeEntry || actionLoading) return
+    if (!activeEntry || actionLoading || !profile) return
     setActionLoading(true)
 
-    // Load company settings for auto break
+    // Load company settings for auto break (fallback if employee has no personal override)
     const { data: settings } = await supabase
       .from('company_settings')
       .select('break_mode, auto_break_minutes')
       .single()
 
+    const breakMode = profile.break_mode ?? settings?.break_mode
+    const autoBreakMinutes = profile.auto_break_minutes ?? settings?.auto_break_minutes ?? 30
+
     const workMinutes = differenceInMinutes(new Date(), new Date(activeEntry.clock_in))
     const breakMins =
-      settings?.break_mode === 'auto' && workMinutes >= 60
-        ? (settings.auto_break_minutes ?? 30)
+      breakMode === 'auto' && workMinutes >= 60
+        ? autoBreakMinutes
         : 0
 
     await supabase

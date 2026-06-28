@@ -29,6 +29,8 @@ export interface Profile {
   fortnox_employee_number: string | null
   reminder_clock_in: string | null
   reminder_clock_out: string | null
+  break_mode: BreakMode | null
+  auto_break_minutes: number | null
   created_at: string
 }
 

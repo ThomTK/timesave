@@ -57,6 +57,10 @@ const labels = {
     reminderClockInPersonal: 'Påminnelse instämpling (valfritt)',
     reminderClockOutPersonal: 'Påminnelse utstämpling (valfritt)',
     reminderNote: 'Lämna tomt för att använda företagets standardtid.',
+    breakModePersonal: 'Rasthantering (valfritt)',
+    breakModeDefault: 'Företagets standard',
+    breakModeNote: 'Lämna på "Företagets standard" om inget individuellt behövs.',
+    autoBreakMinutesPersonal: 'Rastavdrag (minuter)',
   },
   uk: {
     title: 'Налаштування',
@@ -107,6 +111,10 @@ const labels = {
     reminderClockInPersonal: 'Нагадування про прихід (необов\'язково)',
     reminderClockOutPersonal: 'Нагадування про відхід (необов\'язково)',
     reminderNote: 'Залиште порожнім, щоб використовувати стандартний час компанії.',
+    breakModePersonal: 'Управління перервами (необов\'язково)',
+    breakModeDefault: 'Стандарт компанії',
+    breakModeNote: 'Залиште "Стандарт компанії", якщо немає індивідуальних потреб.',
+    autoBreakMinutesPersonal: 'Вирахування перерви (хвилини)',
   },
 }
 
@@ -132,6 +140,8 @@ export default function SettingsPage() {
   const [newStartDate, setNewStartDate] = useState('')
   const [newReminderIn, setNewReminderIn] = useState('')
   const [newReminderOut, setNewReminderOut] = useState('')
+  const [newBreakMode, setNewBreakMode] = useState<'' | 'auto' | 'manual'>('')
+  const [newAutoBreakMinutes, setNewAutoBreakMinutes] = useState('')
   const [addError, setAddError] = useState('')
   const [addLoading, setAddLoading] = useState(false)
   const supabase = createClient()
@@ -194,6 +204,8 @@ export default function SettingsPage() {
         employment_start_date: newStartDate || undefined,
         reminder_clock_in: newReminderIn || null,
         reminder_clock_out: newReminderOut || null,
+        break_mode: newBreakMode || null,
+        auto_break_minutes: newBreakMode === 'auto' && newAutoBreakMinutes ? Number(newAutoBreakMinutes) : null,
       }),
     })
 
@@ -215,6 +227,8 @@ export default function SettingsPage() {
     setNewStartDate('')
     setNewReminderIn('')
     setNewReminderOut('')
+    setNewBreakMode('')
+    setNewAutoBreakMinutes('')
     setAddLoading(false)
     await load()
   }
@@ -393,6 +407,25 @@ export default function SettingsPage() {
               </div>
               <p className="text-xs text-gray-500">{l.reminderNote}</p>
 
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">{l.breakModePersonal}</label>
+                <select value={newBreakMode} onChange={e => setNewBreakMode(e.target.value as '' | 'auto' | 'manual')}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2">
+                  <option value="">{l.breakModeDefault}</option>
+                  <option value="auto">{l.auto}</option>
+                  <option value="manual">{l.manual}</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">{l.breakModeNote}</p>
+              </div>
+              {newBreakMode === 'auto' && (
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{l.autoBreakMinutesPersonal}</label>
+                  <input type="number" min={0} max={120} value={newAutoBreakMinutes}
+                    onChange={e => setNewAutoBreakMinutes(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                </div>
+              )}
+
               {addError && (
                 <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">{addError}</p>
               )}
@@ -494,6 +527,33 @@ export default function SettingsPage() {
                     className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
                   />
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">{l.breakModePersonal}</label>
+                  <select
+                    value={emp.break_mode ?? ''}
+                    onChange={e => updateEmployee(emp.id, { break_mode: (e.target.value || null) as 'auto' | 'manual' | null })}
+                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                  >
+                    <option value="">{l.breakModeDefault}</option>
+                    <option value="auto">{l.auto}</option>
+                    <option value="manual">{l.manual}</option>
+                  </select>
+                </div>
+                {emp.break_mode === 'auto' && (
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">{l.autoBreakMinutesPersonal}</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={120}
+                      value={emp.auto_break_minutes ?? ''}
+                      onChange={e => updateEmployee(emp.id, { auto_break_minutes: e.target.value ? Number(e.target.value) : null })}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           ))}
