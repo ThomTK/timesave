@@ -352,7 +352,11 @@ export default function AdminPage() {
                   : null
 
                 return (
-                  <div key={p.id} className={`bg-white rounded-xl p-4 shadow-sm border border-gray-100 ${activeEntry ? 'border-l-4 border-green-400' : ''}`}>
+                  <button
+                    key={p.id}
+                    onClick={() => router.push(`/admin/employee/${p.id}`)}
+                    className={`w-full text-left bg-white rounded-xl p-4 shadow-sm border border-gray-100 active:bg-gray-50 ${activeEntry ? 'border-l-4 border-green-400' : ''}`}
+                  >
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-semibold text-gray-900">{p.full_name}</p>
@@ -370,7 +374,7 @@ export default function AdminPage() {
                         </div>
                       )}
                     </div>
-                  </div>
+                  </button>
                 )
               })}
             </div>
